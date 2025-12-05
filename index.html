@@ -1,0 +1,812 @@
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, Package, ShoppingCart, Users, FileText, TrendingUp, LogOut, Plus, Edit, Trash2 } from 'lucide-react';
+
+const InventorySystem = () => {
+  // Estado de autenticación
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginError, setLoginError] = useState('');
+
+  // Datos iniciales
+  const [users] = useState([
+    { username: 'admin', password: 'admin123', role: 'Administrador' },
+    { username: 'vendedor1', password: 'vend123', role: 'Vendedor' },
+    { username: 'almacen1', password: 'alm123', role: 'Almacén' }
+  ]);
+
+  const [products, setProducts] = useState([
+    { id: 1, name: 'Laptop HP', price: 800, cost: 600, stock: 15, minStock: 5 },
+    { id: 2, name: 'Mouse Logitech', price: 25, cost: 15, stock: 50, minStock: 20 },
+    { id: 3, name: 'Teclado Mecánico', price: 80, cost: 50, stock: 3, minStock: 10 },
+    { id: 4, name: 'Monitor Samsung 24"', price: 200, cost: 150, stock: 8, minStock: 5 }
+  ]);
+
+  const [sales, setSales] = useState([]);
+  const [managedUsers, setManagedUsers] = useState([...users]);
+
+  // Estado de la vista actual
+  const [currentView, setCurrentView] = useState('dashboard');
+  
+  // Estados para formularios
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [saleCart, setSaleCart] = useState([]);
+  const [productForm, setProductForm] = useState({ id: null, name: '', price: '', cost: '', stock: '', minStock: '' });
+  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'Vendedor' });
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [reportType, setReportType] = useState('daily');
+
+  // CASO DE USO 1: Iniciar sesión
+  const handleLogin = (e) => {
+    e.preventDefault();
+    setLoginError('');
+
+    const user = users.find(u => u.username === loginForm.username);
+    
+    // Flujo alterno 2A: Usuario no existe
+    if (!user) {
+      setLoginError('El usuario no existe');
+      return;
+    }
+
+    // Flujo alterno 1A: Contraseña incorrecta
+    if (user.password !== loginForm.password) {
+      setLoginError('Contraseña incorrecta. Intente nuevamente.');
+      return;
+    }
+
+    // Flujo principal: Login exitoso
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    setLoginForm({ username: '', password: '' });
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setCurrentView('dashboard');
+  };
+
+  // CASO DE USO 2: Registrar venta
+  const addToCart = (productId) => {
+    const product = products.find(p => p.id === productId);
+    const cartItem = saleCart.find(item => item.productId === productId);
+
+    // Flujo alterno 2A: No hay existencia suficiente
+    if (cartItem && cartItem.quantity >= product.stock) {
+      alert('No hay suficiente existencia para este producto');
+      return;
+    }
+
+    if (!cartItem && product.stock <= 0) {
+      alert('Producto sin existencias');
+      return;
+    }
+
+    if (cartItem) {
+      setSaleCart(saleCart.map(item =>
+        item.productId === productId
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+      ));
+    } else {
+      setSaleCart([...saleCart, { productId, quantity: 1, product }]);
+    }
+  };
+
+  const removeFromCart = (productId) => {
+    setSaleCart(saleCart.filter(item => item.productId !== productId));
+  };
+
+  const confirmSale = () => {
+    if (saleCart.length === 0) {
+      alert('El carrito está vacío');
+      return;
+    }
+
+    let total = 0;
+    let utility = 0;
+
+    // Calcular total y utilidad
+    saleCart.forEach(item => {
+      const subtotal = item.product.price * item.quantity;
+      const cost = item.product.cost * item.quantity;
+      total += subtotal;
+      utility += (subtotal - cost);
+    });
+
+    // Registrar venta
+    const newSale = {
+      id: sales.length + 1,
+      date: new Date().toLocaleString(),
+      items: [...saleCart],
+      total,
+      utility,
+      seller: currentUser.username
+    };
+
+    setSales([...sales, newSale]);
+
+    // Actualizar inventario
+    const updatedProducts = products.map(product => {
+      const cartItem = saleCart.find(item => item.productId === product.id);
+      if (cartItem) {
+        return { ...product, stock: product.stock - cartItem.quantity };
+      }
+      return product;
+    });
+
+    setProducts(updatedProducts);
+    setSaleCart([]);
+    alert(`Venta registrada exitosamente!\nTotal: $${total.toFixed(2)}\nUtilidad: $${utility.toFixed(2)}`);
+  };
+
+  // CASO DE USO 3: Gestionar productos
+  const handleProductSubmit = (e) => {
+    e.preventDefault();
+
+    // Flujo alterno 4A: Campo incompleto
+    if (!productForm.name || !productForm.price || !productForm.cost || !productForm.stock || !productForm.minStock) {
+      alert('Todos los campos son obligatorios');
+      return;
+    }
+
+    if (editingProduct) {
+      // Editar producto
+      setProducts(products.map(p =>
+        p.id === editingProduct
+          ? { ...p, ...productForm, price: parseFloat(productForm.price), cost: parseFloat(productForm.cost), stock: parseInt(productForm.stock), minStock: parseInt(productForm.minStock) }
+          : p
+      ));
+      setEditingProduct(null);
+    } else {
+      // Flujo alterno 2A: Producto duplicado
+      if (products.find(p => p.name.toLowerCase() === productForm.name.toLowerCase())) {
+        alert('Ya existe un producto con ese nombre');
+        return;
+      }
+
+      // Agregar nuevo producto
+      const newProduct = {
+        id: products.length + 1,
+        name: productForm.name,
+        price: parseFloat(productForm.price),
+        cost: parseFloat(productForm.cost),
+        stock: parseInt(productForm.stock),
+        minStock: parseInt(productForm.minStock)
+      };
+      setProducts([...products, newProduct]);
+    }
+
+    setProductForm({ id: null, name: '', price: '', cost: '', stock: '', minStock: '' });
+  };
+
+  const editProduct = (product) => {
+    setEditingProduct(product.id);
+    setProductForm({
+      name: product.name,
+      price: product.price.toString(),
+      cost: product.cost.toString(),
+      stock: product.stock.toString(),
+      minStock: product.minStock.toString()
+    });
+  };
+
+  const deleteProduct = (productId) => {
+    if (confirm('¿Está seguro de eliminar este producto?')) {
+      setProducts(products.filter(p => p.id !== productId));
+    }
+  };
+
+  // CASO DE USO 4: Gestionar inventario
+  const updateStock = (productId, newStock) => {
+    // Flujo alterno 3A: Cantidad inválida
+    if (isNaN(newStock) || newStock < 0) {
+      alert('Cantidad inválida. Ingrese un número válido.');
+      return;
+    }
+
+    setProducts(products.map(p =>
+      p.id === productId ? { ...p, stock: parseInt(newStock) } : p
+    ));
+  };
+
+  // CASO DE USO 6: Alertas de bajo inventario
+  const getLowStockProducts = () => {
+    return products.filter(p => p.stock < p.minStock);
+  };
+
+  // CASO DE USO 7: Gestionar usuarios
+  const handleUserSubmit = (e) => {
+    e.preventDefault();
+
+    // Flujo alterno 3A: Dato faltante
+    if (!userForm.username || !userForm.password || !userForm.role) {
+      alert('Todos los campos son obligatorios');
+      return;
+    }
+
+    // Flujo alterno 2A: Usuario ya existente
+    if (managedUsers.find(u => u.username === userForm.username)) {
+      alert('El usuario ya existe');
+      return;
+    }
+
+    setManagedUsers([...managedUsers, { ...userForm }]);
+    setUserForm({ username: '', password: '', role: 'Vendedor' });
+    alert('Usuario creado exitosamente');
+  };
+
+  const deleteUser = (username) => {
+    if (username === 'admin') {
+      alert('No se puede eliminar el usuario administrador');
+      return;
+    }
+    if (confirm('¿Está seguro de eliminar este usuario?')) {
+      setManagedUsers(managedUsers.filter(u => u.username !== username));
+    }
+  };
+
+  // CASO DE USO 5: Generar reportes
+  const generateReport = () => {
+    const lowStock = getLowStockProducts();
+    return {
+      totalSales: sales.reduce((sum, sale) => sum + sale.total, 0),
+      totalUtility: sales.reduce((sum, sale) => sum + sale.utility, 0),
+      salesCount: sales.length,
+      lowStockCount: lowStock.length,
+      topProducts: products.sort((a, b) => b.stock - a.stock).slice(0, 5)
+    };
+  };
+
+  // Pantalla de login
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+          <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">Sistema de Inventario</h1>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Usuario</label>
+              <input
+                type="text"
+                value={loginForm.username}
+                onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Ingrese su usuario"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Ingrese su contraseña"
+              />
+            </div>
+            {loginError && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                {loginError}
+              </div>
+            )}
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition duration-200 font-semibold"
+            >
+              Iniciar Sesión
+            </button>
+          </form>
+          <div className="mt-6 text-sm text-gray-600">
+            <p className="font-semibold mb-2">Usuarios de prueba:</p>
+            <p>• admin / admin123 (Administrador)</p>
+            <p>• vendedor1 / vend123 (Vendedor)</p>
+            <p>• almacen1 / alm123 (Almacén)</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Menú según rol
+  const getMenuItems = () => {
+    const baseItems = [
+      { id: 'dashboard', name: 'Inicio', icon: TrendingUp, roles: ['Administrador', 'Vendedor', 'Almacén'] }
+    ];
+
+    if (currentUser.role === 'Vendedor' || currentUser.role === 'Administrador') {
+      baseItems.push({ id: 'sales', name: 'Registrar Venta', icon: ShoppingCart, roles: ['Vendedor', 'Administrador'] });
+    }
+
+    if (currentUser.role === 'Administrador' || currentUser.role === 'Almacén') {
+      baseItems.push({ id: 'products', name: 'Gestionar Productos', icon: Package, roles: ['Administrador', 'Almacén'] });
+      baseItems.push({ id: 'inventory', name: 'Inventario', icon: Package, roles: ['Administrador', 'Almacén'] });
+    }
+
+    if (currentUser.role === 'Administrador' || currentUser.role === 'Vendedor') {
+      baseItems.push({ id: 'reports', name: 'Reportes', icon: FileText, roles: ['Administrador', 'Vendedor'] });
+    }
+
+    if (currentUser.role === 'Administrador') {
+      baseItems.push({ id: 'users', name: 'Gestionar Usuarios', icon: Users, roles: ['Administrador'] });
+    }
+
+    return baseItems.filter(item => item.roles.includes(currentUser.role));
+  };
+
+  const lowStockProducts = getLowStockProducts();
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <div className="bg-blue-600 text-white p-4 shadow-lg">
+        <div className="container mx-auto flex justify-between items-center">
+          <h1 className="text-2xl font-bold">Sistema de Inventario</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm">
+              {currentUser.username} ({currentUser.role})
+            </span>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded flex items-center gap-2"
+            >
+              <LogOut size={16} />
+              Salir
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto p-4 flex gap-4">
+        {/* Sidebar */}
+        <div className="w-64 bg-white rounded-lg shadow p-4">
+          <nav className="space-y-2">
+            {getMenuItems().map(item => (
+              <button
+                key={item.id}
+                onClick={() => setCurrentView(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+                  currentView === item.id
+                    ? 'bg-blue-600 text-white'
+                    : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                <item.icon size={20} />
+                {item.name}
+              </button>
+            ))}
+          </nav>
+
+          {/* Alertas de bajo inventario */}
+          {(currentUser.role === 'Administrador' || currentUser.role === 'Almacén') && lowStockProducts.length > 0 && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center gap-2 text-red-700 font-semibold mb-2">
+                <AlertCircle size={20} />
+                Alertas de Inventario
+              </div>
+              <p className="text-sm text-red-600 mb-2">{lowStockProducts.length} producto(s) bajo mínimo:</p>
+              {lowStockProducts.map(p => (
+                <p key={p.id} className="text-xs text-red-600">• {p.name}: {p.stock} unidades</p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 bg-white rounded-lg shadow p-6">
+          {/* Dashboard */}
+          {currentView === 'dashboard' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Panel de Control</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-blue-100 p-6 rounded-lg">
+                  <h3 className="text-lg font-semibold text-blue-800">Total Productos</h3>
+                  <p className="text-3xl font-bold text-blue-600">{products.length}</p>
+                </div>
+                {(currentUser.role === 'Administrador' || currentUser.role === 'Vendedor') && (
+                  <>
+                    <div className="bg-green-100 p-6 rounded-lg">
+                      <h3 className="text-lg font-semibold text-green-800">Ventas Registradas</h3>
+                      <p className="text-3xl font-bold text-green-600">{sales.length}</p>
+                    </div>
+                    <div className="bg-purple-100 p-6 rounded-lg">
+                      <h3 className="text-lg font-semibold text-purple-800">Total Ventas</h3>
+                      <p className="text-3xl font-bold text-purple-600">
+                        ${sales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Registrar Venta */}
+          {currentView === 'sales' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Registrar Venta</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Productos Disponibles</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {products.filter(p => p.stock > 0).map(product => (
+                      <div key={product.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <div>
+                          <p className="font-semibold">{product.name}</p>
+                          <p className="text-sm text-gray-600">Precio: ${product.price} | Stock: {product.stock}</p>
+                        </div>
+                        <button
+                          onClick={() => addToCart(product.id)}
+                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                        >
+                          Agregar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Carrito de Venta</h3>
+                  {saleCart.length === 0 ? (
+                    <p className="text-gray-500">El carrito está vacío</p>
+                  ) : (
+                    <>
+                      <div className="space-y-2 mb-4">
+                        {saleCart.map(item => (
+                          <div key={item.productId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                            <div>
+                              <p className="font-semibold">{item.product.name}</p>
+                              <p className="text-sm text-gray-600">
+                                Cantidad: {item.quantity} × ${item.product.price} = ${(item.quantity * item.product.price).toFixed(2)}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => removeFromCart(item.productId)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t pt-4">
+                        <p className="text-xl font-bold">
+                          Total: ${saleCart.reduce((sum, item) => sum + (item.quantity * item.product.price), 0).toFixed(2)}
+                        </p>
+                        <button
+                          onClick={confirmSale}
+                          className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
+                        >
+                          Confirmar Venta
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Gestionar Productos */}
+          {currentView === 'products' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Gestionar Productos</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">
+                    {editingProduct ? 'Editar Producto' : 'Agregar Nuevo Producto'}
+                  </h3>
+                  <form onSubmit={handleProductSubmit} className="space-y-4">
+                    <input
+                      type="text"
+                      placeholder="Nombre del producto"
+                      value={productForm.name}
+                      onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Precio de venta"
+                      value={productForm.price}
+                      onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Costo"
+                      value={productForm.cost}
+                      onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Stock inicial"
+                      value={productForm.stock}
+                      onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Stock mínimo"
+                      value={productForm.minStock}
+                      onChange={(e) => setProductForm({ ...productForm, minStock: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+                      >
+                        {editingProduct ? 'Actualizar' : 'Agregar'}
+                      </button>
+                      {editingProduct && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProduct(null);
+                            setProductForm({ name: '', price: '', cost: '', stock: '', minStock: '' });
+                          }}
+                          className="px-4 bg-gray-400 text-white rounded-lg hover:bg-gray-500"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Lista de Productos</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {products.map(product => (
+                      <div key={product.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <div>
+                          <p className="font-semibold">{product.name}</p>
+                          <p className="text-sm text-gray-600">
+                            Precio: ${product.price} | Stock: {product.stock}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => editProduct(product)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Edit size={20} />
+                          </button>
+                          <button
+                            onClick={() => deleteProduct(product.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Inventario */}
+          {currentView === 'inventory' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Gestión de Inventario</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-200">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Producto</th>
+                      <th className="px-4 py-2 text-left">Stock Actual</th>
+                      <th className="px-4 py-2 text-left">Stock Mínimo</th>
+                      <th className="px-4 py-2 text-left">Estado</th>
+                      <th className="px-4 py-2 text-left">Actualizar Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map(product => (
+                      <tr key={product.id} className="border-b">
+                        <td className="px-4 py-3">{product.name}</td>
+                        <td className="px-4 py-3">{product.stock}</td>
+                        <td className="px-4 py-3">{product.minStock}</td>
+                        <td className="px-4 py-3">
+                          {product.stock < product.minStock ? (
+                            <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-sm">
+                              Bajo stock
+                            </span>
+                          ) : (
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
+                              Normal
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            defaultValue={product.stock}
+                            onBlur={(e) => updateStock(product.id, e.target.value)}
+                            className="w-24 px-2 py-1 border rounded"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Reportes */}
+          {currentView === 'reports' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Reportes</h2>
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">Tipo de Reporte:</label>
+                <select
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value)}
+                  className="px-4 py-2 border rounded-lg"
+                >
+                  <option value="daily">Diario</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="monthly">Mensual</option>
+                  <option value="inventory">Inventario</option>
+                </select>
+              </div>
+              
+              {(() => {
+                const report = generateReport();
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-green-100 p-6 rounded-lg">
+                        <h3 className="text-lg font-semibold text-green-800">Total Ventas</h3>
+                        <p className="text-3xl font-bold text-green-600">${report.totalSales.toFixed(2)}</p>
+                      </div>
+                      <div className="bg-blue-100 p-6 rounded-lg">
+                        <h3 className="text-lg font-semibold text-blue-800">Utilidad</h3>
+                        <p className="text-3xl font-bold text-blue-600">${report.totalUtility.toFixed(2)}</p>
+                      </div>
+                      <div className="bg-purple-100 p-6 rounded-lg">
+                        <h3 className="text-lg font-semibold text-purple-800">Número de Ventas</h3>
+                        <p className="text-3xl font-bold text-purple-600">{report.salesCount}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border rounded-lg p-6">
+                      <h3 className="text-lg font-semibold mb-4">Historial de Ventas</h3>
+                      {sales.length === 0 ? (
+                        <p className="text-gray-500">No hay ventas registradas</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="px-4 py-2 text-left">ID</th>
+                                <th className="px-4 py-2 text-left">Fecha</th>
+                                <th className="px-4 py-2 text-left">Vendedor</th>
+                                <th className="px-4 py-2 text-left">Total</th>
+                                <th className="px-4 py-2 text-left">Utilidad</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sales.map(sale => (
+                                <tr key={sale.id} className="border-b">
+                                  <td className="px-4 py-3">{sale.id}</td>
+                                  <td className="px-4 py-3">{sale.date}</td>
+                                  <td className="px-4 py-3">{sale.seller}</td>
+                                  <td className="px-4 py-3">${sale.total.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-green-600 font-semibold">
+                                    ${sale.utility.toFixed(2)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {report.lowStockCount > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                        <h3 className="text-lg font-semibold text-red-800 mb-4">
+                          Alertas: {report.lowStockCount} producto(s) requieren reposición
+                        </h3>
+                        <div className="space-y-2">
+                          {lowStockProducts.map(p => (
+                            <div key={p.id} className="flex justify-between items-center">
+                              <span>{p.name}</span>
+                              <span className="text-red-600 font-semibold">
+                                Stock: {p.stock} (Mínimo: {p.minStock})
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Gestionar Usuarios */}
+          {currentView === 'users' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Gestión de Usuarios</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Crear Nuevo Usuario</h3>
+                  <form onSubmit={handleUserSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Usuario</label>
+                      <input
+                        type="text"
+                        placeholder="Nombre de usuario"
+                        value={userForm.username}
+                        onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Contraseña</label>
+                      <input
+                        type="password"
+                        placeholder="Contraseña"
+                        value={userForm.password}
+                        onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Rol</label>
+                      <select
+                        value={userForm.role}
+                        onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg"
+                      >
+                        <option value="Vendedor">Vendedor</option>
+                        <option value="Almacén">Almacén</option>
+                        <option value="Administrador">Administrador</option>
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-semibold"
+                    >
+                      Crear Usuario
+                    </button>
+                  </form>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Lista de Usuarios</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {managedUsers.map(user => (
+                      <div key={user.username} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <div>
+                          <p className="font-semibold">{user.username}</p>
+                          <p className="text-sm text-gray-600">Rol: {user.role}</p>
+                        </div>
+                        {user.username !== 'admin' && (
+                          <button
+                            onClick={() => deleteUser(user.username)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default InventorySystem;
